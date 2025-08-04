@@ -1,0 +1,70 @@
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import re
+# Load the dataset with specified NA values
+df = pd.read_csv('netflix_titles.csv', na_values=['NA', 'missing', '', ' '])
+# 1. Handle Missing Values
+# Check missing values
+print("Missing values before cleaning:\n", df.isnull().sum())
+# Fill missing 'director', 'cast', 'country' with 'Unknown'
+df['director'] = df['director'].fillna('Unknown')
+df['cast'] = df['cast'].fillna('Unknown')
+df['country'] = df['country'].fillna('Unknown')
+# Drop rows where 'title', 'type', or 'date_added' are missing (critical columns)
+df = df.dropna(subset=['title', 'type', 'date_added'])
+# Impute missing 'rating' with the mode
+df['rating'] = df['rating'].fillna(df['rating'].mode()[0])
+# Verify no critical missing values remain
+print("\nMissing values after handling:\n", df.isnull().sum())
+# 2. Remove Duplicates
+# Check for duplicates based on 'title' and 'type'
+print("\nDuplicates before removal:", df.duplicated(subset=['title', 'type']).sum())
+# Remove duplicates, keeping the first occurrence
+df = df.drop_duplicates(subset=['title', 'type'], keep='first')
+# Verify
+print("Duplicates after removal:", df.duplicated(subset=['title', 'type']).sum())
+# 3. Fix Inconsistent Formats
+# Standardize 'type' (e.g., 'Movie' or 'TV Show')
+df['type'] = df['type'].str.strip().str.title()
+# Parse and standardize 'date_added' to datetime
+def parse_date(date_str):
+    try:
+        return pd.to_datetime(date_str.strip(), format='%B %d, %Y')
+    except:
+        return pd.NaT
+df['date_added'] = df['date_added'].apply(parse_date)
+
+# Drop rows with invalid 'date_added' (if any)
+df = df.dropna(subset=['date_added'])
+# Standardize 'rating' (e.g., remove inconsistencies like 'UR' vs 'R')
+rating_map = {
+    'UR': 'R', 'TV-Y7-FV': 'TV-Y7', 'TV-G': 'G', 'NR': 'Unrated', 'NC-17': 'R'
+}
+df['rating'] = df['rating'].replace(rating_map).str.upper()
+# Clean 'country' and 'listed_in' (remove extra spaces, standardize commas)
+def clean_text(text):
+    if pd.isna(text):
+        return text
+    return ', '.join([x.strip() for x in text.split(',') if x.strip()])
+
+df['country'] = df['country'].apply(clean_text)
+df['listed_in'] = df['listed_in'].apply(clean_text)
+# Standardize 'duration'
+# For movies: extract numeric minutes (e.g., '90 min' -> 90)
+# For TV shows: keep seasons as is
+def standardize_duration(row):
+    duration = row['duration']
+    if row['type'] == 'Movie':
+        match = re.match(r'(\d+)\s*min', str(duration), re.IGNORECASE)
+        return int(match.group(1)) if match else np.nan
+    return duration  # Keep TV show durations (e.g., '2 Seasons') as is
+
+# 4. Verify and Save
+# Final check
+print("\nData types:\n", df.dtypes)
+print("\nFirst few rows:\n", df.head())
+# Save cleaned dataset
+df.to_csv('cleaned_netflix_titles.csv', index=False)
+
+print("\nCleaned dataset saved as 'cleaned_netflix_titles.csv'")
